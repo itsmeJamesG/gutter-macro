@@ -1,0 +1,45 @@
+# Gutter Macro Dashboard.
+#
+# One always-on machine. The app runs its own refresh timer in-process, so the
+# machine must not auto-stop — a suspended machine never wakes to rebuild the data,
+# and the dashboard would quietly serve a stale payload forever.
+
+app = "gutter-macro"
+primary_region = "iad"          # close to BLS/EIA/PJM origins
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  MACRO_DATA_PATH = "/data/macro.json"
+  MACRO_REFRESH_HOURS = "12"
+  MACRO_HISTORY_YEARS = "10"
+
+# Persists both the rendered payload and the parquet cache across deploys, so a
+# restart is instant and does not re-hammer the upstream APIs.
+[[mounts]]
+  source = "gutter_macro_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 200
+    soft_limit = 100
+
+[[http_service.checks]]
+  grace_period = "20s"
+  interval = "30s"
+  method = "GET"
+  timeout = "5s"
+  path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"                # pandas + pyarrow during a refresh; idle sits far below

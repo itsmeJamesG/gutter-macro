@@ -1,0 +1,13 @@
+{
+  "name": "gutter-macro-checks",
+  "private": true,
+  "type": "module",
+  "description": "Client-side tests and visual verification for the dashboard page.",
+  "scripts": {
+    "test": "node --test tests/js/transforms.test.mjs",
+    "verify": "node tests/js/screenshot.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  }
+}

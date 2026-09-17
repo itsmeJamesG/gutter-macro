@@ -1,0 +1,18 @@
+# Generated dashboard payload
+site/
+
+# Local parquet cache of every fetched series
+data_cache/
+
+# Credentials
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node (screenshot harness only)
+node_modules/
+*.png
