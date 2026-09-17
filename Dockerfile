@@ -27,13 +27,18 @@ FROM python:3.12-slim AS runtime
 # Non-root: the app only ever reads upstream APIs and writes its own volume.
 RUN useradd --create-home --uid 10001 gutter
 
+# Create /app owned by the app user *before* copying: --chown sets ownership on the
+# copied contents, not on the directory itself, so a root-owned /app leaves the app
+# unable to write anything beside its own code.
+RUN mkdir -p /app && chown gutter:gutter /app
 WORKDIR /app
 COPY --from=builder --chown=gutter:gutter /app /app
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    MACRO_DATA_PATH=/data/macro.json
+    MACRO_DATA_PATH=/data/macro.json \
+    MACRO_CACHE_DIR=/data/cache
 
 # The volume mounts here; create it so the image also runs without one.
 RUN mkdir -p /data && chown gutter:gutter /data

@@ -89,15 +89,24 @@ app = FastAPI(title="Gutter Macro Dashboard", lifespan=lifespan)
 
 @app.get("/healthz")
 def healthz() -> JSONResponse:
+    """Healthy means "serving data", not "process is up".
+
+    Reporting 200 unconditionally is how a container with a failed build sits in
+    production looking green while every panel is empty — which is exactly what
+    happened on the first deploy of this app. A build that failed *and* left
+    nothing to serve is a failure; a first build still in flight is not.
+    """
     payload = _state["payload"]
+    broken = payload is None and _state["last_error"] is not None
     return JSONResponse(
-        {
-            "ok": True,
+        status_code=503 if broken else 200,
+        content={
+            "ok": not broken,
             "has_data": payload is not None,
             "generated_at": (payload or {}).get("generated_at"),
             "loaded_at": _state["loaded_at"],
             "last_error": _state["last_error"],
-        }
+        },
     )
 
 

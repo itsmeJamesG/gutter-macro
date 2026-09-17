@@ -23,7 +23,12 @@ import pandas as pd
 from . import series as reg
 from .series import Freq, Panel, SeriesSpec, Source
 
-CACHE_DIR = Path(__file__).resolve().parent.parent / "data_cache"
+# The parquet cache is written at runtime, so where it lives depends on the
+# deployment: beside the package for local work, on the mounted volume in
+# production. The image itself is neither writable by the app user nor persistent.
+CACHE_DIR = Path(
+    os.environ.get("MACRO_CACHE_DIR", Path(__file__).resolve().parent.parent / "data_cache")
+)
 
 # Ranges the dashboard offers. The payload always carries the widest of them, and
 # the page windows client-side — switching range is then instant and costs no

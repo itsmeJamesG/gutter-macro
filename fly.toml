@@ -12,6 +12,8 @@ primary_region = "iad"          # close to BLS/EIA/PJM origins
 
 [env]
   MACRO_DATA_PATH = "/data/macro.json"
+  # Parquet cache lives on the volume: the image is neither writable nor persistent.
+  MACRO_CACHE_DIR = "/data/cache"
   MACRO_REFRESH_HOURS = "12"
   MACRO_HISTORY_YEARS = "10"
 
