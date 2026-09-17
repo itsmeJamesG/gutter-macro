@@ -49,6 +49,8 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", type=Path, default=REPO / "site" / "data.json",
                     help="where to write the payload (default: site/data.json)")
+    ap.add_argument("--site", type=Path, metavar="DIR",
+                    help="also assemble a publishable static site in DIR")
     ap.add_argument("--years", type=int, default=10,
                     help="widest range the payload carries (default: 10)")
     ap.add_argument("--probe", choices=("eia", "pjm", "ercot"),
@@ -65,6 +67,13 @@ def main() -> int:
     from gutter_macro.build import build
 
     result = build(history_years=args.years, out_path=args.out)
+
+    if args.site:
+        from gutter_macro.site import build_site
+
+        written = build_site(result.payload, args.site)
+        print(f"site assembled in {args.site}: "
+              f"{', '.join(p.name for p in written)}")
 
     print(f"\n{result.ok_count}/{len(result.status)} series built -> {args.out}")
     for key, state in result.status.items():

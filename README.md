@@ -17,10 +17,11 @@ gutter_macro/
     eia.py             Henry Hub futures curve     (EIA_API_KEY)
     pjm.py             Western Hub day-ahead LMP   (PJM_API_KEY)
     ercot.py           North Hub day-ahead SPP     (three ERCOT credentials)
-app/
-  main.py              FastAPI: /, /api/data.json, /healthz, /refresh
-  static/              index.html, chart.js, app.js — no CDN, no build step
-scripts/refresh.py
+  site.py              assemble the publishable static site
+web/                   index.html, chart.js, app.js — no CDN, no build step
+app/main.py            optional local dev server (the deployment needs no backend)
+scripts/refresh.py     fetch everything; --site assembles web/ + data.json
+.github/workflows/     the only thing that runs in production
 ```
 
 ## Running it
@@ -62,20 +63,54 @@ uv run uv run python scripts/refresh.py --probe ercot   # prints the positional 
 
 ## Deploying
 
-```bash
-fly apps create gutter-macro                                   # first time only
-fly volumes create gutter_macro_data --size 1 --region iad
-fly secrets set EIA_API_KEY=... PJM_API_KEY=... ERCOT_API_KEY=... \
-                ERCOT_USERNAME=... ERCOT_PASSWORD=...
-fly deploy --remote-only
+The dashboard has **no backend**. The page is plain HTML and JS, and the "database"
+is a single `data.json` beside it — so GitHub Actions builds the site on a schedule
+and GitHub Pages serves it. Nothing runs between refreshes.
+
+```
+.github/workflows/publish.yml    fetch -> test -> assemble -> deploy to Pages
 ```
 
-`primary_region` is pinned to `iad` deliberately: **ERCOT blocks requests from
-outside the United States**, and does so with an unhelpful 403.
+It runs on every push to `main`, daily at **14:00 UTC** (after the 08:30 ET window
+when BLS releases CPI and PPI, so a release lands the same day), and on demand via
+*Actions -> Refresh data and publish -> Run workflow*.
 
-The machine is `auto_stop_machines = false` on purpose. The refresh timer runs
-in-process, and a suspended machine never wakes to rebuild — it would serve a
-stale payload indefinitely while looking healthy.
+Credentials go in **Settings -> Secrets and variables -> Actions**, using the names
+in the table above. All are optional; absent ones are reported as skipped and the
+affected panels say so on the page rather than failing the run. Only the assembled
+`data.json` is published — the keys stay in the Actions environment.
+
+Two gates stand between a bad fetch and a published page: the test suite must pass,
+and the build must yield at least 10 of the 19 series. `refresh.py` alone exits
+non-zero only when *everything* failed, which would let a gutted dashboard publish
+quietly.
+
+**Two things to know about this setup:**
+
+- Pages on a **private** repo requires a paid GitHub plan. On the free plan the
+  repo must be public. Everything published here is public government data, but
+  that is a choice to make deliberately.
+- GitHub disables scheduled workflows after **60 days without repo activity**. If
+  the data goes stale, check whether the schedule was disabled before suspecting
+  the fetchers.
+
+### Previewing locally
+
+```bash
+uv run python scripts/refresh.py --site site
+python -m http.server -d site 8099
+```
+
+That is the published artifact, served exactly as Pages serves it. For iterating on
+the page itself there is also a small FastAPI server with a `/refresh` endpoint and
+a background timer, serving the identical file layout:
+
+```bash
+MACRO_DATA_PATH=$PWD/site/data.json uv run uvicorn app.main:app --port 8099
+```
+
+`Dockerfile` and `fly.toml` remain for running it as a long-lived service instead;
+they are not used by the Pages deployment.
 
 ## What's in it, and what each series will and won't tell you
 

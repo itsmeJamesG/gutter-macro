@@ -1,11 +1,15 @@
-"""Gutter Macro Dashboard — web app.
+"""Local development server.
 
-Deliberately small. The interesting work happens in gutter_macro; this serves the
-payload that build.py produced and the one page that renders it.
+The published dashboard is static — GitHub Actions builds it and Pages serves it,
+with no backend at all (see .github/workflows/publish.yml). This exists for working
+on the page locally, where a /refresh endpoint and a background timer beat rerunning
+the build script by hand. It serves exactly the file layout Pages does, so what you
+see here is what ships.
 
-The payload is read from disk, not rebuilt per request: a refresh costs a dozen
-upstream API calls and must not be triggerable by a page load. A background task
-refreshes it on an interval, and /refresh forces one.
+To preview a built site without this server at all:
+
+    uv run python scripts/refresh.py --site site
+    python -m http.server -d site 8099
 """
 from __future__ import annotations
 
@@ -23,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 
 log = logging.getLogger("gutter.macro")
 
-STATIC_DIR = Path(__file__).parent / "static"
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 DATA_PATH = Path(os.environ.get("MACRO_DATA_PATH", "/data/macro.json"))
 REFRESH_HOURS = float(os.environ.get("MACRO_REFRESH_HOURS", "12"))
 HISTORY_YEARS = int(os.environ.get("MACRO_HISTORY_YEARS", "10"))
@@ -134,7 +138,7 @@ def healthz() -> JSONResponse:
     )
 
 
-@app.get("/api/data.json")
+@app.get("/data.json")
 def data() -> Response:
     payload = _state["payload"] or load_payload()
     if payload is None:
@@ -157,7 +161,10 @@ async def force_refresh() -> JSONResponse:
 
 @app.get("/")
 def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(WEB_DIR / "index.html")
 
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+# Mounted at the root so app.js and chart.js sit beside index.html, matching the
+# published layout exactly — the page's relative fetch("./data.json") resolves the
+# same way here as it does under a Pages project subpath.
+app.mount("/", StaticFiles(directory=WEB_DIR), name="web")

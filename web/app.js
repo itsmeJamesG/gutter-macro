@@ -426,7 +426,9 @@ async function boot() {
     if (saved) document.documentElement.setAttribute("data-theme", saved);
   } catch {}
 
-  const res = await fetch("/api/data.json");
+  // Relative on purpose: the same page is served from the site root locally and
+  // from /<repo>/ on GitHub Pages. An absolute path 404s on the latter.
+  const res = await fetch("./data.json");
   if (!res.ok) {
     document.getElementById("panels").innerHTML =
       `<section class="card"><p class="awaiting">The first build is still running. Reload in a moment.</p></section>`;

@@ -1,0 +1,88 @@
+name: Refresh data and publish
+
+# The dashboard has no backend: this workflow *is* the backend. It fetches every
+# series, assembles a static site, and publishes it to GitHub Pages.
+on:
+  push:
+    branches: [main]
+  schedule:
+    # 14:00 UTC daily — after the 08:30 ET window when BLS releases CPI and PPI,
+    # so a release day is picked up the same day rather than the next.
+    - cron: "0 14 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let a scheduled run and a push race each other onto Pages. Don't cancel a
+# run in progress: it is fetching from rate-limited public APIs, and a half-finished
+# fetch is wasted quota.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run tests
+        # A green suite is the gate: never publish a build whose parsers are broken.
+        run: uv run pytest -q
+
+      - name: Build the site
+        env:
+          # All optional. Absent ones are reported as skipped and the affected
+          # panels say so on the page, rather than failing the run.
+          BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
+          EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
+          PJM_API_KEY: ${{ secrets.PJM_API_KEY }}
+          ERCOT_API_KEY: ${{ secrets.ERCOT_API_KEY }}
+          ERCOT_USERNAME: ${{ secrets.ERCOT_USERNAME }}
+          ERCOT_PASSWORD: ${{ secrets.ERCOT_PASSWORD }}
+        run: uv run python scripts/refresh.py --site site
+
+      - name: Check the build produced something
+        # scripts/refresh.py exits non-zero only when *every* series failed. This
+        # catches the subtler case: a build that succeeded but lost most of its
+        # data, which would otherwise publish a near-empty dashboard silently.
+        run: |
+          uv run python - <<'EOF'
+          import json, sys
+          from pathlib import Path
+          d = json.loads(Path("site/data.json").read_text())
+          ok = sum(1 for v in d["status"].values() if v == "ok")
+          errored = {k: v for k, v in d["status"].items() if v.startswith("error:")}
+          print(f"{ok}/{len(d['status'])} series ok")
+          for k, v in errored.items():
+              print(f"  ERROR {k}: {v}")
+          if ok < 10:
+              sys.exit(f"Only {ok} series loaded — refusing to publish a gutted dashboard.")
+          if errored:
+              print("::warning::Some series errored; publishing the rest.")
+          EOF
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
