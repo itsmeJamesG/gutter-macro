@@ -66,6 +66,30 @@ async def _refresh_into_state() -> None:
         _state["last_error"] = f"{type(exc).__name__}: {exc}"
 
 
+async def _startup_refresh() -> None:
+    """First refresh after boot, with a bounded retry.
+
+    A machine that has just started can reach DNS before it can resolve every
+    upstream host: the first deploy of this app resolved api.bls.gov and
+    fred.stlouisfed.org but failed on www.pjm.com with "No address associated with
+    hostname", losing the capacity panel until the next scheduled refresh twelve
+    hours later. Retrying only helps transient errors, so a source that is merely
+    unconfigured ("skipped:") never triggers one.
+    """
+    for delay in (0, 15, 45):
+        if delay:
+            await asyncio.sleep(delay)
+        await _refresh_into_state()
+        payload = _state["payload"] or {}
+        errored = [
+            k for k, v in (payload.get("status") or {}).items()
+            if v.startswith("error:")
+        ]
+        if _state["last_error"] is None and not errored:
+            return
+        log.warning("startup refresh incomplete (%s), retrying", errored or _state["last_error"])
+
+
 async def _refresh_loop() -> None:
     while True:
         await asyncio.sleep(REFRESH_HOURS * 3600)
@@ -78,7 +102,7 @@ async def lifespan(app: FastAPI):
     # blocked on a dozen upstream APIs.
     _state["payload"] = load_payload()
     if _state["payload"] is None:
-        asyncio.create_task(_refresh_into_state())
+        asyncio.create_task(_startup_refresh())
     task = asyncio.create_task(_refresh_loop())
     yield
     task.cancel()
